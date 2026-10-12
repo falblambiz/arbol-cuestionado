@@ -29,6 +29,7 @@
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
   }
   function yearOf(s) { var m = String(s || '').match(/\d{4}/); return m ? m[0] : ''; }
+  function plural(n, singular, plurales) { return n + ' ' + (n === 1 ? singular : plurales); }
   function initials(name) {
     var parts = String(name || '').trim().split(/\s+/).filter(Boolean);
     if (!parts.length) return '?';
@@ -264,7 +265,8 @@
     var el = $('#estadoDatos');
     if (!el) return;
     var fecha = state.meta.actualizado ? new Date(state.meta.actualizado).toLocaleString() : '—';
-    el.textContent = state.personas.length + ' personas · ' + state.aportes.length + ' aportes · último guardado: ' + fecha;
+    el.textContent = plural(state.personas.length, 'persona', 'personas') + ' · ' +
+      plural(state.aportes.length, 'aporte', 'aportes') + ' · último guardado: ' + fecha;
   }
 
   /* --------------------------- layout --------------------------- */
@@ -536,29 +538,70 @@
         '</button>';
     }).join('');
 
-    $('#stats').textContent = state.personas.length + ' personas · ' + state.aportes.length + ' aportes';
+    $('#stats').textContent = plural(state.personas.length, 'persona', 'personas') + ' · ' +
+      plural(state.aportes.length, 'aporte', 'aportes');
     pintarDatalist();
     pintarFicha();
-    if (!preserveView) fit();
+    if (!preserveView) fit(esMovil() ? 'ancho' : 'todo');
     else aplicarVista();
     buscar();
+  }
+
+  function esMovil() {
+    return !!(window.matchMedia && window.matchMedia('(max-width: 900px)').matches);
+  }
+
+  /* ---------- hoja inferior en móvil ---------- */
+  function abrirTab(nombre) {
+    var t = $('.tab[data-tab="' + nombre + '"]');
+    if (t) t.click();
+  }
+  function abrirPanel(tab) {
+    if (tab) abrirTab(tab);
+    if (!esMovil()) return;
+    var panel = $('#panel');
+    if (panel) panel.classList.add('abierto');
+    document.body.classList.add('panel-abierto');
+    var t = $('#sheetTitulo');
+    if (t) t.textContent = tab === 'aporte' ? 'Aportar datos' : (tab === 'datos' ? 'Datos y ajustes' : 'Ficha');
+  }
+  function cerrarPanel() {
+    var panel = $('#panel');
+    if (panel) { panel.classList.remove('abierto'); panel.style.transform = ''; }
+    document.body.classList.remove('panel-abierto');
   }
 
   function aplicarVista() {
     var mundo = $('#mundo');
     mundo.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.zoom + ')';
   }
-  function fit() {
+  function fit(modo) {
     var lienzo = $('#lienzo');
     if (!lienzo || !worldSize.w) { aplicarVista(); return; }
     var w = lienzo.clientWidth, h = lienzo.clientHeight;
-    var z = Math.min((w - 60) / worldSize.w, (h - 60) / worldSize.h, 1.1);
-    z = Math.max(z, 0.15);
-    view.zoom = z;
-    view.x = (w - worldSize.w * z) / 2;
-    view.y = (h - worldSize.h * z) / 2;
+    var z, y;
+    if (modo === 'ancho') {
+      // En móvil el árbol puede ser más ancho que la pantalla: se empieza con un zoom
+      // legible centrado en el cuestionado y se deja el botón ⤢ para verlo entero.
+      z = Math.min(1.1, Math.max(0.75, (w - 28) / worldSize.w));
+      var raizX = 0, raizY = 0;
+      if (xs && xs.has(state.meta.raizId)) {
+        raizX = xs.get(state.meta.raizId) + PAD + CARD_W / 2;
+        raizY = lay.row.get(state.meta.raizId) * ROW_STEP + PAD + CARD_H / 2;
+      }
+      view.zoom = z;
+      view.x = w / 2 - raizX * z;
+      view.y = Math.min(h * 0.42 - raizY * z, 40);
+    } else {
+      z = Math.min((w - 60) / worldSize.w, (h - 60) / worldSize.h, 1.1);
+      z = Math.max(z, 0.15);
+      view.zoom = z;
+      view.x = (w - worldSize.w * z) / 2;
+      view.y = (h - worldSize.h * z) / 2;
+    }
     aplicarVista();
   }
+  function ajustarTodo() { fit('todo'); }
   function zoomEn(factor, cx, cy) {
     var lienzo = $('#lienzo'), r = lienzo.getBoundingClientRect();
     var px = cx == null ? r.width / 2 : cx - r.left, py = cy == null ? r.height / 2 : cy - r.top;
@@ -607,7 +650,8 @@
     var d = distancias();
     $('#fichaTitulo').textContent = p.nombre + (p.alias ? ' (“' + p.alias + '”)' : '');
     $('#fichaRel').textContent = etiquetaRelacion(p.id, d) + ' · ' +
-      childrenOf(p.id).length + ' hijos/as conocidos · ' + (p.parejas || []).length + ' parejas';
+      plural(childrenOf(p.id).length, 'hijo/a conocido', 'hijos/as conocidos') + ' · ' +
+      plural((p.parejas || []).length, 'pareja', 'parejas');
     $('#fNombre').value = p.nombre;
     $('#fAlias').value = p.alias || '';
     $('#fSexo').value = p.sexo || '';
@@ -1166,34 +1210,92 @@
         $$('.tab-panel').forEach(function (x) { x.classList.remove('active'); });
         t.classList.add('active');
         $('#tab-' + t.dataset.tab).classList.add('active');
+        var titulo = $('#sheetTitulo');
+        if (titulo) titulo.textContent = t.dataset.tab === 'aporte' ? 'Aportar datos' : (t.dataset.tab === 'datos' ? 'Datos y ajustes' : 'Ficha');
+        var p = $('#panel');
+        if (p) p.scrollTop = 0;
       });
     });
-    function abrirTab(nombre) {
-      var t = $('.tab[data-tab="' + nombre + '"]');
-      if (t) t.click();
-    }
 
-    // --- canvas: pan y zoom
-    var lienzo = $('#lienzo'), dragging = false, movido = false, start = null;
+    // --- canvas: arrastrar con un dedo, pellizcar con dos, rueda en escritorio.
+    //     La captura del puntero es perezosa: sólo cuando el gesto pasa a ser un
+    //     arrastre, para que los toques sobre tarjetas sigan siendo clics normales.
+    var lienzo = $('#lienzo'), movido = false, punteros = new Map(), gesto = null;
+
+    function posEnLienzo(e) {
+      var r = lienzo.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    function capturarTodos() {
+      punteros.forEach(function (p, id) { try { lienzo.setPointerCapture(id); } catch (err) { } });
+    }
+    function centroYDistancia() {
+      var ids = Array.from(punteros.keys());
+      if (ids.length < 2) return null;
+      var a = punteros.get(ids[0]).pos, b = punteros.get(ids[1]).pos;
+      var dx = a.x - b.x, dy = a.y - b.y;
+      return { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.max(1, Math.sqrt(dx * dx + dy * dy)) };
+    }
+    function iniciarGesto() {
+      var ids = Array.from(punteros.keys());
+      if (ids.length >= 2) {
+        var c = centroYDistancia();
+        gesto = { tipo: 'pinch', mid0: c.mid, dist0: c.dist, zoom0: view.zoom, vx: view.x, vy: view.y };
+        capturarTodos();
+      } else if (ids.length === 1) {
+        var p = punteros.get(ids[0]).pos;
+        gesto = { tipo: 'espera', x0: p.x, y0: p.y, vx: view.x, vy: view.y };
+      } else {
+        gesto = null;
+      }
+    }
     lienzo.addEventListener('pointerdown', function (e) {
-      if (e.target.closest('.card')) return;
-      dragging = true; movido = false;
-      start = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y };
+      punteros.set(e.pointerId, { pos: posEnLienzo(e) });
+      movido = false;
       lienzo.classList.add('dragging');
-      lienzo.setPointerCapture(e.pointerId);
+      iniciarGesto();
     });
     lienzo.addEventListener('pointermove', function (e) {
-      if (!dragging) return;
-      var dx = e.clientX - start.x, dy = e.clientY - start.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) movido = true;
-      view.x = start.vx + dx; view.y = start.vy + dy;
+      var p = punteros.get(e.pointerId);
+      if (!p) return;
+      p.pos = posEnLienzo(e);
+      if (!gesto) return;
+      if (gesto.tipo === 'espera') {
+        var dx = p.pos.x - gesto.x0, dy = p.pos.y - gesto.y0;
+        if (Math.sqrt(dx * dx + dy * dy) < 8) return;      // todavía puede ser un toque
+        capturarTodos();                                    // ya es un arrastre
+        gesto = { tipo: 'pan', x0: gesto.x0, y0: gesto.y0, vx: gesto.vx, vy: gesto.vy };
+        movido = true;
+      }
+      if (gesto.tipo === 'pan') {
+        var ddx = p.pos.x - gesto.x0, ddy = p.pos.y - gesto.y0;
+        view.x = gesto.vx + ddx;
+        view.y = gesto.vy + ddy;
+        movido = true;
+      } else if (gesto.tipo === 'pinch') {
+        var c = centroYDistancia();
+        if (!c) return;
+        var z = Math.min(2.5, Math.max(0.15, gesto.zoom0 * (c.dist / gesto.dist0)));
+        // el punto que estaba entre los dedos sigue entre los dedos
+        var wx = (gesto.mid0.x - gesto.vx) / gesto.zoom0;
+        var wy = (gesto.mid0.y - gesto.vy) / gesto.zoom0;
+        view.zoom = z;
+        view.x = c.mid.x - wx * z;
+        view.y = c.mid.y - wy * z;
+        movido = true;
+      }
       aplicarVista();
     });
     function soltar(e) {
-      if (!dragging) return;
-      dragging = false;
-      lienzo.classList.remove('dragging');
+      if (!punteros.has(e.pointerId)) return;
+      punteros.delete(e.pointerId);
       try { lienzo.releasePointerCapture(e.pointerId); } catch (err) { }
+      if (punteros.size) { iniciarGesto(); }
+      else {
+        gesto = null;
+        lienzo.classList.remove('dragging');
+        movido = false;              // el siguiente toque vuelve a ser un toque, no un arrastre
+      }
     }
     lienzo.addEventListener('pointerup', soltar);
     lienzo.addEventListener('pointercancel', soltar);
@@ -1206,7 +1308,47 @@
 
     $('#btnZoomIn').addEventListener('click', function () { zoomEn(1.18); });
     $('#btnZoomOut').addEventListener('click', function () { zoomEn(0.85); });
-    $('#btnFit').addEventListener('click', fit);
+    $('#btnFit').addEventListener('click', ajustarTodo);
+    $$('[data-zoom]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var accion = b.dataset.zoom;
+        if (accion === 'in') zoomEn(1.25);
+        else if (accion === 'out') zoomEn(0.8);
+        else if (accion === 'raiz') {
+          if (state.meta.raizId && xs && xs.has(state.meta.raizId)) centrarEn(state.meta.raizId);
+          else ajustarTodo();
+        } else ajustarTodo();
+      });
+    });
+
+    // --- hoja inferior: cerrar con la ✕, con el fondo o arrastrando hacia abajo
+    var panel = $('#panel'), cabeza = $('#sheetHead'), arrastre = null;
+    $('#btnCerrarPanel').addEventListener('click', cerrarPanel);
+    $('#backdrop').addEventListener('click', cerrarPanel);
+    if (cabeza) {
+      cabeza.addEventListener('pointerdown', function (e) {
+        if (e.target.closest && e.target.closest('button')) return;
+        arrastre = { y0: e.clientY, dy: 0 };
+        panel.classList.add('arrastrando');
+        try { cabeza.setPointerCapture(e.pointerId); } catch (err) { }
+      });
+      cabeza.addEventListener('pointermove', function (e) {
+        if (!arrastre) return;
+        arrastre.dy = Math.max(0, e.clientY - arrastre.y0);
+        panel.style.transform = 'translateY(' + arrastre.dy + 'px)';
+      });
+      function soltarCabeza(e) {
+        if (!arrastre) return;
+        var dy = arrastre.dy;
+        arrastre = null;
+        panel.classList.remove('arrastrando');
+        panel.style.transform = '';
+        try { cabeza.releasePointerCapture(e.pointerId); } catch (err) { }
+        if (dy > 70) cerrarPanel();
+      }
+      cabeza.addEventListener('pointerup', soltarCabeza);
+      cabeza.addEventListener('pointercancel', soltarCabeza);
+    }
 
     // --- tarjetas
     $('#tarjetas').addEventListener('click', function (e) {
@@ -1215,7 +1357,7 @@
       movido = false;
       if (!card || arrastrado) return;
       seleccionar(card.dataset.id, false);
-      abrirTab('ficha');
+      abrirPanel('ficha');
     });
     $('#tarjetas').addEventListener('dblclick', function (e) {
       var card = e.target.closest('.card');
@@ -1314,11 +1456,12 @@
       if (enAporte) {
         $('#btnModo').dataset.modo = '';
         $('#btnModo').textContent = 'Modo aporte';
+        cerrarPanel();
         abrirTab('ficha');
       } else {
         $('#btnModo').dataset.modo = 'aporte';
         $('#btnModo').textContent = 'Volver a edición';
-        abrirTab('aporte');
+        abrirPanel('aporte');
         $('#aRef').value = byId(state.meta.raizId) ? byId(state.meta.raizId).nombre : '';
       }
     });
@@ -1425,7 +1568,11 @@
     $('#bannerCerrar').addEventListener('click', function () { $('#banner').hidden = true; });
     $('#bannerAccion').addEventListener('click', function () { if (bannerAccion) bannerAccion(); });
     window.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { seleccion = null; pintarFicha(); $$('.card').forEach(function (c) { c.classList.remove('seleccionada'); }); }
+      if (e.key === 'Escape') {
+        cerrarPanel();
+        seleccion = null; pintarFicha();
+        $$('.card').forEach(function (c) { c.classList.remove('seleccionada'); });
+      }
     });
     window.addEventListener('hashchange', leerHash);
   }
@@ -1441,8 +1588,11 @@
       c.classList.toggle('dim', !!q && !coincide);
       if (coincide) hits++;
     });
-    if (q) $('#stats').textContent = hits + ' coincidencia(s)';
-    else if (state.personas.length) $('#stats').textContent = state.personas.length + ' personas · ' + state.aportes.length + ' aportes';
+    if (q) $('#stats').textContent = plural(hits, 'coincidencia', 'coincidencias');
+    else if (state.personas.length) {
+      $('#stats').textContent = plural(state.personas.length, 'persona', 'personas') + ' · ' +
+        plural(state.aportes.length, 'aporte', 'aportes');
+    }
   }
 
   function cargarDemo() {
@@ -1476,7 +1626,11 @@
       }).catch(function () { });
     }
     leerHash();
-    window.addEventListener('resize', function () { if (lay) fit(); });
+    // al girar el móvil o cambiar el tamaño no se pierde el zoom ni el encuadre
+    window.addEventListener('resize', function () { if (lay) aplicarVista(); });
+    if (window.matchMedia) {
+      try { window.matchMedia('(max-width: 900px)').addEventListener('change', function () { if (lay) fit(esMovil() ? 'ancho' : 'todo'); }); } catch (e) { }
+    }
   }
 
   /* --------------------------- depuración --------------------------- */
@@ -1499,7 +1653,12 @@
       leerHash: leerHash,
       hayCrypto: hayCrypto,
       cifrarTexto: cifrarTexto,
-      descifrarTexto: descifrarTexto
+      descifrarTexto: descifrarTexto,
+      esMovil: esMovil,
+      abrirPanel: abrirPanel,
+      cerrarPanel: cerrarPanel,
+      ajustarTodo: ajustarTodo,
+      vista: function () { return { zoom: view.zoom, x: view.x, y: view.y }; }
     };
   }
 

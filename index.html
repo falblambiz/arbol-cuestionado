@@ -2,10 +2,12 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Árbol genealógico — El Cuestionado</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#2f6f4f" />
 <meta name="description" content="Captura colaborativa de quiénes son los padres, los hijos y demás familiares del cuestionado, con árbol genealógico visual." />
 <meta name="color-scheme" content="light" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icono-192.png" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>" />
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -45,6 +47,12 @@
         <svg id="aristas" class="edges" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
         <div id="tarjetas" class="cards"></div>
       </div>
+      <div class="zoom-flotante">
+        <button class="icon" data-zoom="in" aria-label="Acercar" title="Acercar">+</button>
+        <button class="icon" data-zoom="out" aria-label="Alejar" title="Alejar">−</button>
+        <button class="icon" data-zoom="raiz" aria-label="Centrar en el cuestionado" title="Centrar en el cuestionado">◎</button>
+        <button class="icon" data-zoom="todo" aria-label="Ver todo el árbol" title="Ver todo el árbol">⤢</button>
+      </div>
       <div id="vacio" class="vacio" hidden>
         <p class="big">El árbol está vacío</p>
         <p class="muted">Empieza marcando quién es <strong>el cuestionado</strong> y añadiendo a sus padres y a sus hijos.</p>
@@ -63,7 +71,12 @@
     </footer>
   </section>
 
-  <aside class="panel">
+  <aside class="panel" id="panel">
+    <div class="sheet-head" id="sheetHead">
+      <span class="sheet-grip" aria-hidden="true"></span>
+      <span class="sheet-titulo" id="sheetTitulo">Ficha</span>
+      <button id="btnCerrarPanel" class="icon ghost" aria-label="Cerrar el panel">✕</button>
+    </div>
     <nav class="tabs" role="tablist">
       <button class="tab active" data-tab="ficha" role="tab">Ficha</button>
       <button class="tab" data-tab="aporte" role="tab">Aportar datos</button>
@@ -273,6 +286,7 @@
 </main>
 
 <datalist id="personasDatalist"></datalist>
+<div id="backdrop" class="backdrop"></div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>

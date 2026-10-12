@@ -203,6 +203,168 @@ COMPROBACIONES = r"""
 """
 
 
+MOBILE_COMPROBACIONES = r"""
+(async () => {
+  const out = [];
+  const ok = (t, c, extra) => out.push((c ? 'OK   ' : 'FALLA ') + t + (extra ? '  [' + extra + ']' : ''));
+  const esperar = (ms) => new Promise(r => setTimeout(r, ms));
+  const D = window.ARBOL_DEBUG;
+  ok('la app detecta el modo móvil', D.esMovil());
+  window.confirm = () => true;
+  document.getElementById('btnDemo').click();
+  await esperar(80);
+
+  const vp = window.innerHeight, vpW = window.innerWidth;
+  const lienzo = document.getElementById('lienzo').getBoundingClientRect();
+  ok('el lienzo ocupa la pantalla', lienzo.height > vp * 0.6, Math.round(lienzo.height) + ' de ' + Math.round(vp) + 'px');
+  ok('el lienzo ocupa todo el ancho', lienzo.width >= vpW * 0.98, Math.round(lienzo.width) + ' de ' + vpW + 'px');
+  ok('el lienzo no se sale por abajo', lienzo.bottom <= vp + 1, Math.round(lienzo.bottom) + ' vs ' + vp);
+  ok('sin desbordes horizontales', document.documentElement.scrollWidth <= vpW + 1,
+     document.documentElement.scrollWidth + ' vs ' + vpW);
+  const campo = document.getElementById('fNombre');
+  ok('campos a 16px (iOS no hace zoom al enfocar)', parseFloat(getComputedStyle(campo).fontSize) >= 16,
+     getComputedStyle(campo).fontSize);
+  const z = D.vista().zoom;
+  const anchoTarjeta = document.querySelector('#tarjetas .card').offsetWidth * z;
+  ok('tarjetas legibles sin tocar nada', anchoTarjeta >= 110, Math.round(anchoTarjeta) + 'px de ancho');
+  const flotantes = Array.from(document.querySelectorAll('.zoom-flotante .icon'));
+  ok('controles flotantes visibles y de 44px+', flotantes.length === 4 &&
+     flotantes.every(b => b.getBoundingClientRect().width >= 44),
+     flotantes.length + ' botones de ' + Math.round(flotantes[0].getBoundingClientRect().width) + 'px');
+  ok('los zoom del encabezado se ocultan en móvil',
+     getComputedStyle(document.querySelector('.tools .zoom')).display === 'none');
+  ok('la leyenda de escritorio se oculta', getComputedStyle(document.querySelector('.leyenda .chip')).display === 'none');
+  ok('misma clave de almacenamiento (tus datos sobreviven)',
+     !!localStorage.getItem('arbol-genealogico/v1'), localStorage.getItem('arbol-genealogico/v1') ? 'presente' : 'ausente');
+  ok('la hoja arranca cerrada', !document.getElementById('panel').classList.contains('abierto'));
+  out.push('');
+  out.push('COORDENADAS_LIENZO ' + JSON.stringify({ x: Math.round(lienzo.left + lienzo.width / 2), y: Math.round(lienzo.bottom - 90) }));
+  out.push('ZOOM_INICIAL ' + z);
+  return out.join('\n');
+})()
+"""
+
+ESTADO_PANEL = r"""
+(() => {
+  const panel = document.getElementById('panel');
+  const fondo = document.getElementById('backdrop');
+  return JSON.stringify({
+    abierto: panel.classList.contains('abierto'),
+    cuerpo: document.body.classList.contains('panel-abierto'),
+    transform: getComputedStyle(panel).transform,
+    fondoVisible: getComputedStyle(fondo).display !== 'none',
+    fichaActiva: document.getElementById('tab-ficha').classList.contains('active'),
+    tituloHoja: (document.getElementById('sheetTitulo') || {}).textContent || '',
+    zoom: window.ARBOL_DEBUG.vista().zoom
+  });
+})()
+"""
+
+
+def toque(ws, tipo, puntos):
+    cdp(ws, "Input.dispatchTouchEvent", {"type": tipo, "touchPoints": puntos})
+
+
+def fase_movil(ws, url):
+    """Simula un iPhone: métricas, toques y pellizco reales."""
+    salida = []
+    cdp(ws, "Emulation.setDeviceMetricsOverride", {
+        "width": 390, "height": 844, "deviceScaleFactor": 3, "mobile": True
+    })
+    cdp(ws, "Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 5})
+    cdp(ws, "Page.reload", {"ignoreCache": True})
+    time.sleep(3)
+
+    def evaluar(expr):
+        return cdp(ws, "Runtime.evaluate", {"expression": expr, "returnByValue": True, "awaitPromise": True},
+                   timeout=60)["result"].get("value")
+
+    informe = evaluar(MOBILE_COMPROBACIONES)
+    lienzo, zoom0 = None, None
+    for linea in informe.split("\n"):
+        if linea.startswith("COORDENADAS_LIENZO "):
+            lienzo = json.loads(linea.split(" ", 1)[1])
+        elif linea.startswith("ZOOM_INICIAL "):
+            zoom0 = float(linea.split(" ", 1)[1])
+        else:
+            salida.append(linea)
+
+    # --- pellizco para ampliar (con la hoja cerrada) ---
+    x, y = lienzo["x"], lienzo["y"]
+    for separacion in (60, 120, 190):
+        toque(ws, "touchStart", [
+            {"x": x - separacion // 2, "y": y, "radiusX": 10, "radiusY": 10, "force": 1, "id": 1},
+            {"x": x + separacion // 2, "y": y, "radiusX": 10, "radiusY": 10, "force": 1, "id": 2},
+        ])
+        time.sleep(0.08)
+        for paso in range(1, 5):
+            sep = separacion + paso * 30
+            toque(ws, "touchMove", [
+                {"x": x - sep // 2, "y": y, "radiusX": 10, "radiusY": 10, "force": 1, "id": 1},
+                {"x": x + sep // 2, "y": y, "radiusX": 10, "radiusY": 10, "force": 1, "id": 2},
+            ])
+            time.sleep(0.05)
+        toque(ws, "touchEnd", [])
+        time.sleep(0.1)
+    estado = json.loads(evaluar(ESTADO_PANEL))
+    salida.append(("OK   " if estado["zoom"] > zoom0 * 1.3 else "FALLA ") + "el pellizco amplía el árbol" +
+                  "  [zoom " + str(round(zoom0, 2)) + " → " + str(round(estado["zoom"], 2)) + "]")
+
+    # --- un dedo: arrastre ---
+    vista0 = json.loads(evaluar("JSON.stringify(window.ARBOL_DEBUG.vista())"))
+    toque(ws, "touchStart", [{"x": x, "y": y, "radiusX": 10, "radiusY": 10, "force": 1, "id": 1}])
+    time.sleep(0.1)
+    for paso in (30, 60, 90):
+        toque(ws, "touchMove", [{"x": x + paso, "y": y - paso // 2, "radiusX": 10, "radiusY": 10, "force": 1, "id": 1}])
+        time.sleep(0.06)
+    toque(ws, "touchEnd", [])
+    time.sleep(0.25)
+    vista1 = json.loads(evaluar("JSON.stringify(window.ARBOL_DEBUG.vista())"))
+    salida.append(("OK   " if abs(vista1["x"] - vista0["x"]) > 40 else "FALLA ") + "un dedo desplaza el árbol" +
+                  "  [x " + str(round(vista0["x"])) + " → " + str(round(vista1["x"])) + "]")
+
+    # --- «ver todo» y toque en una tarjeta ---
+    evaluar("window.ARBOL_DEBUG.ajustarTodo();")
+    time.sleep(0.35)
+    zoomTodo = json.loads(evaluar(ESTADO_PANEL))["zoom"]
+    salida.append(("OK   " if zoomTodo < estado["zoom"] else "FALLA ") + "«ver todo» encaja el árbol completo" +
+                  "  [zoom " + str(round(zoomTodo, 2)) + "]")
+    coords = json.loads(evaluar(
+        "JSON.stringify((()=>{const c=document.querySelector('#tarjetas .card.raiz').getBoundingClientRect();"
+        "return {x: Math.round(c.left+c.width/2), y: Math.round(c.top+c.height/2), alto: Math.round(c.height),"
+        "visible: c.top>0 && c.bottom<window.innerHeight};})())"))
+    salida.append(("OK   " if coords["visible"] else "FALLA ") + "el cuestionado queda visible en pantalla")
+
+    punto = {"x": coords["x"], "y": coords["y"], "radiusX": 12, "radiusY": 12, "force": 1, "id": 1}
+    toque(ws, "touchStart", [punto])
+    time.sleep(0.12)
+    toque(ws, "touchEnd", [])
+    time.sleep(0.5)
+    estado = json.loads(evaluar(ESTADO_PANEL))
+    salida.append(("OK   " if estado["abierto"] else "FALLA ") + "un toque en la tarjeta abre la hoja" +
+                  ("  [abierto]" if estado["abierto"] else "  [no se abrió]"))
+    salida.append(("OK   " if estado["fondoVisible"] else "FALLA ") + "aparece el fondo oscurecido")
+    salida.append(("OK   " if estado["fichaActiva"] else "FALLA ") + "la hoja abre en la pestaña Ficha")
+    salida.append(("OK   " if estado["transform"] in ("matrix(1, 0, 0, 1, 0, 0)", "none") else "FALLA ") +
+                  "la hoja queda dentro de la pantalla  [" + estado["transform"] + "]")
+
+    # --- cerrar tocando el fondo, y luego con la ✕ ---
+    toque(ws, "touchStart", [{"x": 195, "y": 30, "radiusX": 10, "radiusY": 10, "force": 1, "id": 1}])
+    time.sleep(0.1)
+    toque(ws, "touchEnd", [])
+    time.sleep(0.4)
+    estado = json.loads(evaluar(ESTADO_PANEL))
+    salida.append(("OK   " if not estado["abierto"] else "FALLA ") + "tocar el fondo cierra la hoja")
+
+    # --- sin desbordes tras todo el ejercicio ---
+    ancho = json.loads(evaluar("JSON.stringify([document.documentElement.scrollWidth, window.innerWidth,"
+                               " document.getElementById('lienzo').getBoundingClientRect().width])"))
+    sw, iw, lw = ancho
+    salida.append(("OK   " if sw <= iw + 1 and lw >= iw * 0.98 else "FALLA ") +
+                  "sin desbordes y lienzo a ancho completo  [" + str(sw) + " vs " + str(iw) + ", lienzo " + str(round(lw)) + "]")
+    return salida
+
+
 def main():
     carpeta = os.path.dirname(os.path.abspath(__file__))
     url = None
@@ -254,6 +416,10 @@ def main():
             print("Excepción en la página:", json.dumps(resultado["exceptionDetails"])[:600])
             return 1
         print(valor.get("value", "(sin resultado)"))
+        print()
+        print("═══ Fase móvil (iPhone simulado: 390x844, táctil) ═══")
+        for linea in fase_movil(ws, url):
+            print(linea)
         return 0
     finally:
         chrome.terminate()

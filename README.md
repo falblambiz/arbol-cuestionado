@@ -88,6 +88,16 @@ Para que los aportes de otras personas te lleguen, hay tres vías (de menos a m�
 - **Búsqueda** con resaltado y salto a la coincidencia (Enter).
 - **Responsive**: usable desde el teléfono (útil para captar datos en una reunión familiar).
 
+### En el móvil (optimizado)
+
+- **Lienzo a pantalla completa**: el árbol ocupa todo el alto disponible; la interfaz no roba espacio.
+- **Pellizcar para ampliar** y **arrastrar con un dedo** para moverse (gestos reales, no solo botones). Arrastrar funciona también empezando sobre una tarjeta: si mueves el dedo, mueves el árbol; si solo tocas, abres la ficha.
+- **La ficha es una hoja inferior**: al tocar una persona sube desde abajo (estilo mapa), con asa para arrastrarla y cerrarla, ✕ o tocando el fondo. Así no hay que ir y volver entre el árbol y el formulario.
+- **Zoom a mano**: botones flotantes de 46px (acercar, alejar, centrar en el cuestionado, ver todo el árbol).
+- **Arranca legible**: por defecto el móvil no muestra el árbol en miniatura, sino con un zoom cómodo centrado en el cuestionado; el botón ⤢ muestra todo.
+- **Campos a 16px** para que iOS no haga zoom automático al escribir, botones de 44px y respeto de las zonas seguras (muesca y barra inferior).
+- **Instalable**: incluye `manifest.json` e iconos, así que se puede añadir a la pantalla de inicio (Compartir → *Añadir a pantalla de inicio*) y se abre a pantalla completa.
+
 ## 5. Ajustes (`config.js`)
 
 ```js
@@ -130,13 +140,19 @@ Los hijos **no** se guardan en la persona: se derivan de los campos `padre`/`mad
 ## 8. Archivos
 
 ```
-index.html    estructura y paneles
-styles.css    estilos (claro, responsive)
-app.js        estado, captura de aportes, layout del árbol, exportaciones
-config.js     título/subtítulo/endpoint
-data.json     datos publicados (edítalo y haz push para publicar cambios)
-deploy.sh     ayuda para subir a GitHub
-abrir.sh      servidor local de prueba
+index.html          estructura y paneles
+styles.css          estilos (claro, con hoja inferior y gestos en móvil)
+app.js              estado, captura de aportes, layout del árbol, enlaces cifrados, exportaciones
+config.js           título/subtítulo/endpoint
+manifest.json       para instalarla en la pantalla de inicio
+icono.svg           icono original
+icono-192.png       icono pequeño
+icono-512.png       icono grande
+data.json           datos publicados (en modo privado debe quedarse vacío)
+deploy.sh           ayuda para subir a GitHub
+abrir.sh            servidor local de prueba
+pruebas-smoke.js    pruebas de lógica y DOM simulado
+pruebas-navegador.py pruebas en Chrome real (escritorio y iPhone simulado)
 ```
 
 ## 9. Notas para desarrollo / verificación
@@ -147,10 +163,11 @@ abrir.sh      servidor local de prueba
   osascript -l JavaScript pruebas-smoke.js     # 67 comprobaciones
   ```
 
-- `pruebas-navegador.py` abre la app en **Chrome real** (por el protocolo de depuración) y verifica lo que no se puede probar fuera del navegador: el cifrado de enlaces con WebCrypto, el DOM renderizado, el ajuste a pantalla, la fusión de un enlace recibido y el localStorage:
+- `pruebas-navegador.py` abre la app en **Chrome real** (por el protocolo de depuración) y verifica lo que no se puede probar fuera del navegador: el cifrado de enlaces con WebCrypto, el DOM renderizado, el ajuste a pantalla, la fusión de un enlace recibido y el localStorage. Después simula un **iPhone (390×844, táctil)** y comprueba la maquetación, los campos a 16px, los controles de 44px, un **pellizco real**, el arrastre, la apertura y cierre de la hoja inferior:
 
   ```bash
-  python3 pruebas-navegador.py                 # 20 comprobaciones en Chrome
+  python3 pruebas-navegador.py                 # 20 comprobaciones de escritorio + 22 de móvil
+  python3 pruebas-navegador.py https://TU-USUARIO.github.io/TU-REPO/   # contra la web publicada
   ```
 
 - En la consola del navegador, `ARBOL_DEBUG` expone utilidades para inspeccionar el estado:

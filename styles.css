@@ -176,10 +176,94 @@ button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(
 .aportes .badge { font-size: .68rem; padding: .05rem .35rem; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); }
 .aportes .badge.aplicado { border-color: #bfe0cc; color: var(--alta); }
 
+/* ---------- hoja inferior (móvil) y controles flotantes ---------- */
+.sheet-head { display: none; }
+.zoom-flotante { display: none; }
+.backdrop { display: none; }
+
 @media (max-width: 900px) {
-  .layout { grid-template-columns: 1fr; }
-  .canvas { height: 60vh; }
-  .tab-panel { max-height: none; }
-  .brand-text h1, .brand-text p { max-width: 60vw; }
-  #buscar { width: 100%; }
+  html, body { overflow: hidden; height: 100%; }
+  body {
+    display: flex; flex-direction: column;
+    padding-bottom: env(safe-area-inset-bottom);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .topbar { flex: 0 0 auto; }
+  #banner { flex: 0 0 auto; }
+  .layout {
+    display: flex; flex-direction: column; gap: 0; padding: 0;
+    flex: 1 1 auto; min-height: 0; height: auto;
+    align-items: stretch;          /* sin esto, el lienzo se encogía a su contenido */
+  }
+  .topbar { padding: .4rem .6rem; gap: .35rem; border-bottom: 1px solid var(--line); }
+  .brand { gap: .4rem; }
+  .logo { font-size: 1.25rem; }
+  .brand-text h1 { font-size: .95rem; }
+  .brand-text p { display: none; }
+  .brand-text h1 { max-width: 46vw; }
+  .tools { width: 100%; gap: .3rem; flex-wrap: nowrap; }
+  #buscar { flex: 1; width: auto; min-width: 0; font-size: 16px; padding: .5rem .6rem; }
+  .tools .zoom { display: none; }              /* los controles pasan al lienzo */
+  #btnModo { white-space: nowrap; }
+
+  .canvas-wrap { flex: 1 1 auto; min-height: 0; gap: 0; width: 100%; min-width: 0; }
+  .canvas {
+    flex: 1 1 auto; height: auto; min-height: 0;
+    border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0;
+  }
+  .leyenda { padding: .2rem .6rem .35rem; min-height: 26px; }
+  .leyenda .chip { display: none; }             /* en móvil estorban: el detalle va en la hoja */
+
+  .zoom-flotante {
+    display: flex; flex-direction: column; gap: .4rem;
+    position: absolute; right: .6rem; bottom: .6rem; z-index: 12;
+  }
+  .zoom-flotante .icon {
+    width: 46px; height: 46px; font-size: 1.15rem; border-radius: 50%;
+    background: #fff; box-shadow: var(--shadow); border: 1px solid var(--line);
+  }
+
+  /* El panel se convierte en hoja inferior deslizable */
+  .panel {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    max-height: 82dvh; overflow: auto; -webkit-overflow-scrolling: touch;
+    border-radius: 18px 18px 0 0; border-bottom: 0;
+    transform: translateY(103%); transition: transform .24s cubic-bezier(.32,.72,0,1);
+    padding-bottom: calc(.5rem + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 30px rgba(16, 32, 24, .18);
+  }
+  .panel.abierto { transform: translateY(0); }
+  .panel.arrastrando { transition: none; }
+  .sheet-head {
+    display: flex; align-items: center; gap: .5rem; position: sticky; top: 0; z-index: 3;
+    background: var(--panel); padding: .35rem .6rem .3rem; border-bottom: 1px solid var(--line);
+    touch-action: none;
+  }
+  .sheet-grip { width: 42px; height: 4px; border-radius: 999px; background: #cbd6d0; }
+  .sheet-titulo { flex: 1; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
+  .sheet-head .icon { width: 40px; height: 40px; }
+
+  .tabs .tab { padding: .7rem .4rem; }
+  .tab-panel { max-height: none; padding: .9rem .85rem 1.2rem; }
+
+  .backdrop { display: none; }
+  body.panel-abierto .backdrop {
+    display: block; position: fixed; inset: 0; z-index: 35;
+    background: rgba(12, 24, 18, .32);
+  }
+
+  /* iOS hace zoom automático si el campo tiene menos de 16px */
+  input[type="text"], input[type="url"], input[type="search"], select, textarea { font-size: 16px; }
+  button, .chips li { min-height: 40px; }
+  .actions button, .quick button, .chips li button { min-height: 44px; }
+  .quick { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+  .quick button:last-child { grid-column: 1 / -1; }
+  .grid2 { gap: .5rem; }
+  .card { box-shadow: none; }
+}
+
+@media (hover: none) {
+  .card:hover { border-color: var(--line); }
+  button:hover { background: #fff; }
+  button.primary:hover { background: var(--accent); }
 }

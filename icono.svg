@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Árbol genealógico">
+  <rect width="512" height="512" rx="96" fill="#2f6f4f" />
+  <rect width="512" height="512" rx="96" fill="url(#brillo)" />
+  <defs>
+    <linearGradient id="brillo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d8a63" />
+      <stop offset="1" stop-color="#23543c" />
+    </linearGradient>
+  </defs>
+  <!-- copa -->
+  <circle cx="256" cy="196" r="104" fill="#eaf5ee" />
+  <circle cx="168" cy="240" r="70" fill="#eaf5ee" />
+  <circle cx="344" cy="240" r="70" fill="#eaf5ee" />
+  <!-- tronco -->
+  <rect x="238" y="290" width="36" height="120" rx="16" fill="#dfc79a" />
+  <!-- raíces -->
+  <path d="M256 400 L190 452 M256 400 L322 452 M256 400 L256 456" stroke="#dfc79a" stroke-width="20" stroke-linecap="round" fill="none" />
+  <!-- nodos familiares -->
+  <circle cx="256" cy="150" r="22" fill="#2f6f4f" />
+  <circle cx="186" cy="252" r="18" fill="#2f6f4f" />
+  <circle cx="326" cy="252" r="18" fill="#2f6f4f" />
+</svg>

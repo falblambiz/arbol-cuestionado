@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Árbol genealógico — El Cuestionado</title>
+<meta name="description" content="Captura colaborativa de quiénes son los padres, los hijos y demás familiares del cuestionado, con árbol genealógico visual." />
+<meta name="color-scheme" content="light" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">🌳</span>
+    <div class="brand-text">
+      <h1 id="tituloApp">Árbol genealógico</h1>
+      <p id="subtituloApp" class="muted">Padres e hijos del cuestionado</p>
+    </div>
+  </div>
+  <div class="tools">
+    <input id="buscar" type="search" placeholder="Buscar persona…" autocomplete="off" aria-label="Buscar persona" />
+    <div class="zoom">
+      <button id="btnZoomOut" class="icon" title="Alejar" aria-label="Alejar">−</button>
+      <button id="btnZoomIn" class="icon" title="Acercar" aria-label="Acercar">+</button>
+      <button id="btnFit" class="ghost" title="Ajustar a pantalla">Ajustar</button>
+    </div>
+    <button id="btnModo" class="primary">Modo aporte</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" hidden>
+  <span id="bannerTexto"></span>
+  <span class="banner-actions">
+    <button id="bannerAccion" class="small primary" hidden></button>
+    <button id="bannerCerrar" class="small ghost">Cerrar</button>
+  </span>
+</div>
+
+<main class="layout">
+  <section class="canvas-wrap">
+    <div id="lienzo" class="canvas">
+      <div id="mundo" class="world">
+        <svg id="aristas" class="edges" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+        <div id="tarjetas" class="cards"></div>
+      </div>
+      <div id="vacio" class="vacio" hidden>
+        <p class="big">El árbol está vacío</p>
+        <p class="muted">Empieza marcando quién es <strong>el cuestionado</strong> y añadiendo a sus padres y a sus hijos.</p>
+        <div class="row center">
+          <button id="btnNueva" class="primary">Añadir la primera persona</button>
+          <button id="btnDemo" class="ghost">Cargar datos de ejemplo</button>
+        </div>
+      </div>
+    </div>
+    <footer class="leyenda">
+      <span class="chip raiz">El cuestionado</span>
+      <span class="chip certeza-alta">certeza alta</span>
+      <span class="chip certeza-media">media</span>
+      <span class="chip certeza-baja">baja</span>
+      <span class="muted small" id="stats"></span>
+    </footer>
+  </section>
+
+  <aside class="panel">
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="ficha" role="tab">Ficha</button>
+      <button class="tab" data-tab="aporte" role="tab">Aportar datos</button>
+      <button class="tab" data-tab="datos" role="tab">Datos</button>
+    </nav>
+
+    <!-- ================= FICHA ================= -->
+    <section id="tab-ficha" class="tab-panel active">
+      <p id="fichaVacia" class="hint">Haz clic en una persona del árbol para editar su ficha, asignar padre/madre, hijos o pareja.</p>
+
+      <div id="fichaForm" hidden>
+        <h2 id="fichaTitulo">—</h2>
+        <p class="muted small" id="fichaRel"></p>
+
+        <div class="grid2">
+          <label class="col2">Nombre completo
+            <input id="fNombre" type="text" placeholder="Nombre y apellidos" />
+          </label>
+          <label>Alias o apodo
+            <input id="fAlias" type="text" />
+          </label>
+          <label>Sexo
+            <select id="fSexo">
+              <option value="">Sin dato</option>
+              <option value="M">Masculino</option>
+              <option value="F">Femenino</option>
+              <option value="X">Otro / prefiero no decir</option>
+            </select>
+          </label>
+          <label>Nacimiento
+            <input id="fNac" type="text" placeholder="1972 o 1972-05-12" />
+          </label>
+          <label>Fallecimiento
+            <input id="fFall" type="text" placeholder="—" />
+          </label>
+          <label>Certeza del dato
+            <select id="fCerteza">
+              <option value="alta">Alta (documentado)</option>
+              <option value="media">Media (bastante seguro)</option>
+              <option value="baja">Baja (rumor / por confirmar)</option>
+            </select>
+          </label>
+          <label>Lugar
+            <input id="fLugar" type="text" placeholder="Ciudad, país" />
+          </label>
+          <label class="col2">Foto (URL)
+            <input id="fFoto" type="url" placeholder="https://…" />
+          </label>
+        </div>
+
+        <label class="col2">Notas
+          <textarea id="fNotas" rows="3" placeholder="Contexto, parentescos dudosos, etc."></textarea>
+        </label>
+        <label class="col2">Fuentes (una por línea: texto | url)
+          <textarea id="fFuentes" rows="2" placeholder="Partida de nacimiento | https://…"></textarea>
+        </label>
+
+        <div class="grid2 rel">
+          <label>Padre
+            <select id="fPadre"></select>
+          </label>
+          <label>Madre
+            <select id="fMadre"></select>
+          </label>
+        </div>
+
+        <div class="rel-block">
+          <h3>Hijos e hijas</h3>
+          <ul id="listaHijos" class="chips"></ul>
+          <div class="row">
+            <input id="nuevoHijo" list="personasDatalist" placeholder="Nombre nuevo o existente…" />
+            <button id="btnAddHijo" class="small">Añadir</button>
+          </div>
+        </div>
+
+        <div class="rel-block">
+          <h3>Parejas</h3>
+          <ul id="listaParejas" class="chips"></ul>
+          <div class="row">
+            <input id="nuevaPareja" list="personasDatalist" placeholder="Nombre nuevo o existente…" />
+            <button id="btnAddPareja" class="small">Añadir</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btnGuardar" class="primary">Guardar cambios</button>
+          <button id="btnRaiz" class="ghost">Marcar como “el cuestionado”</button>
+          <button id="btnBorrar" class="danger ghost">Eliminar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= APORTE ================= -->
+    <section id="tab-aporte" class="tab-panel">
+      <p class="hint">Registra lo que sabes sobre <strong>el cuestionado</strong>: quiénes son sus padres, quiénes sus hijos y cualquier otro familiar. Cada aporte guarda <em>quién lo dice</em> y con qué certeza.</p>
+
+      <div class="quick">
+        <button class="small" data-quick="padre">+ Padre del cuestionado</button>
+        <button class="small" data-quick="madre">+ Madre del cuestionado</button>
+        <button class="small" data-quick="hijo">+ Hijo/a del cuestionado</button>
+      </div>
+
+      <div class="grid2">
+        <label class="col2">Tu nombre o seudónimo
+          <input id="aInformante" type="text" placeholder="Cómo quieres figurar" />
+        </label>
+        <label>Tipo de aporte
+          <select id="aTipo">
+            <option value="padre">Es el padre de…</option>
+            <option value="madre">Es la madre de…</option>
+            <option value="hijo">Es hijo/a de…</option>
+            <option value="pareja">Es pareja de…</option>
+            <option value="persona">Datos de una persona</option>
+          </select>
+        </label>
+        <label>Sobre quién
+          <input id="aRef" list="personasDatalist" placeholder="El cuestionado" />
+        </label>
+        <label class="col2">Nombre del familiar
+          <input id="aNombre" type="text" placeholder="Nombre y apellidos" />
+        </label>
+        <label>Sexo
+          <select id="aSexo">
+            <option value="">Sin dato</option>
+            <option value="M">Masculino</option>
+            <option value="F">Femenino</option>
+            <option value="X">Otro</option>
+          </select>
+        </label>
+        <label>Nacimiento (año)
+          <input id="aNac" type="text" placeholder="1950" />
+        </label>
+        <label>Certeza
+          <select id="aCerteza">
+            <option value="alta">Alta</option>
+            <option value="media" selected>Media</option>
+            <option value="baja">Baja</option>
+          </select>
+        </label>
+        <label>Fuente
+          <input id="aFuente" type="text" placeholder="url o descripción" />
+        </label>
+      </div>
+
+      <label class="col2">Detalle
+        <textarea id="aNotas" rows="2" placeholder="Lo que sabes, de quién lo supiste, etc."></textarea>
+      </label>
+      <label class="check"><input id="aAplicar" type="checkbox" checked /> Aplicar también al árbol local</label>
+
+      <div class="actions wrap">
+        <button id="btnAporte" class="primary">Guardar aporte</button>
+        <button id="btnEnviar" class="ghost">Enviar al administrador</button>
+        <button id="btnLink" class="ghost">Copiar enlace con mis aportes</button>
+      </div>
+
+      <h3>Aportes registrados (<span id="numAportes">0</span>)</h3>
+      <ul id="listaAportes" class="aportes"></ul>
+    </section>
+
+    <!-- ================= DATOS ================= -->
+    <section id="tab-datos" class="tab-panel">
+      <h3>Guardar y compartir</h3>
+      <div class="aviso-privado">
+        <strong>Modo privado activo.</strong> El repositorio público solo tiene el código: tus datos viven en este navegador.
+        Para compartir el árbol, usa un enlace (mejor <em>cifrado con contraseña</em>). El botón de abajo pregunta si quieres protegerlo.
+      </div>
+      <div class="actions wrap">
+        <button id="btnEnlaceDatos" class="primary">Copiar enlace del árbol</button>
+        <button id="btnExportJson" class="ghost">Descargar JSON</button>
+        <button id="btnImportJson" class="ghost">Importar JSON</button>
+        <button id="btnGedcom" class="ghost">Exportar GEDCOM</button>
+        <button id="btnPng" class="ghost">Descargar PNG</button>
+        <button id="btnCsv" class="ghost">Exportar CSV</button>
+      </div>
+      <input id="archivoJson" type="file" accept=".json,application/json" hidden />
+
+      <h3>Ajustes</h3>
+      <div class="grid2">
+        <label class="col2">Título
+          <input id="cfgTitulo" type="text" />
+        </label>
+        <label class="col2">Subtítulo
+          <input id="cfgSubtitulo" type="text" />
+        </label>
+        <label class="col2">Endpoint de envío (opcional)
+          <input id="cfgEndpoint" type="url" placeholder="https://formspree.io/f/xxxx" />
+        </label>
+        <label class="col2">Repositorio GitHub (opcional)
+          <input id="cfgRepo" type="url" placeholder="https://github.com/usuario/repo" />
+        </label>
+      </div>
+      <div class="actions">
+        <button id="btnGuardarCfg" class="primary small">Guardar ajustes</button>
+        <button id="btnCopiarCfg" class="ghost small">Copiar ajustes para config.js</button>
+      </div>
+
+      <h3>Datos locales</h3>
+      <p class="hint">Todo se guarda en <strong>este navegador</strong> (localStorage): nada se envía a ningún servidor.
+        En modo privado <strong>no</strong> subas tu JSON al repositorio: guárdalo solo en tu Mac (o en tu nube personal) como copia de seguridad.</p>
+      <div class="actions wrap">
+        <button id="btnDemoDatos" class="ghost">Cargar datos de ejemplo</button>
+        <button id="btnVaciar" class="danger ghost">Vaciar árbol</button>
+      </div>
+      <p class="muted small" id="estadoDatos"></p>
+    </section>
+  </aside>
+</main>
+
+<datalist id="personasDatalist"></datalist>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

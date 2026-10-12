@@ -1,0 +1,17 @@
+# Modo privado: el repositorio es público, los datos NO.
+# Este archivo evita que subas por accidente un JSON con datos reales.
+
+# Copias de datos que quizá descargues en esta carpeta
+mis-datos*.json
+datos*.json
+!data.json
+arbol*.json
+!data.json
+*privado*.json
+*privacy*.*
+export*/
+backup*/
+
+# Por si editas data.json con datos reales y luego lo "vacías":
+# (usa mejor un nombre como mis-datos.local.json, que también queda ignorado)
+*.local.json

@@ -144,6 +144,11 @@ button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(
 .tab-panel.active { display: block; }
 .hint { font-size: .85rem; color: var(--ink-soft); background: #f8faf9; border: 1px dashed var(--line); border-radius: 10px; padding: .55rem .65rem; }
 .aviso-privado { font-size: .82rem; color: #24543c; background: var(--accent-soft); border: 1px solid #cfe3d7; border-radius: 10px; padding: .55rem .65rem; margin-bottom: .5rem; }
+.sync-estado { font-size: .82rem; border-radius: 10px; padding: .5rem .65rem; margin-bottom: .5rem; border: 1px solid var(--line); background: #f8faf9; color: var(--ink-soft); }
+.sync-estado.ok { border-color: #bfe0cc; background: #f1f9f4; color: var(--alta); }
+.sync-estado.trabajando { border-color: #cfe3d7; background: var(--accent-soft); color: #24543c; }
+.sync-estado.aviso { border-color: #f0dcb6; background: var(--raiz-soft); color: #8a5a12; }
+.sync-estado.error { border-color: #e7cdc8; background: #fbf0ee; color: var(--danger); }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; }
 .grid2 .col2 { grid-column: 1 / -1; }

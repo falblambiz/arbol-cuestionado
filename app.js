@@ -246,11 +246,16 @@
   }
 
   /* --------------------------- persistencia --------------------------- */
-  function save() {
+  function guardarLocal(silencioso) {
     state.meta.actualizado = new Date().toISOString();
-    try { localStorage.setItem(LS_KEY, JSON.stringify({ meta: state.meta, personas: state.personas, aportes: state.aportes })); }
-    catch (e) { console.warn('No se pudo guardar en localStorage', e); }
-    estadoDatos();
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({ meta: state.meta, personas: state.personas, aportes: state.aportes }));
+    } catch (e) { console.warn('No se pudo guardar en localStorage', e); }
+    if (!silencioso) estadoDatos();
+  }
+  function save() {
+    guardarLocal();
+    programarSubida();
   }
   function load() {
     var raw = null;
@@ -264,9 +269,379 @@
   function estadoDatos() {
     var el = $('#estadoDatos');
     if (!el) return;
-    var fecha = state.meta.actualizado ? new Date(state.meta.actualizado).toLocaleString() : '—';
+    var fecha = state.meta.actualizado ? new Date(state.meta.actualizado).toLocaleTimeString() : '—';
     el.textContent = plural(state.personas.length, 'persona', 'personas') + ' · ' +
-      plural(state.aportes.length, 'aporte', 'aportes') + ' · último guardado: ' + fecha;
+      plural(state.aportes.length, 'aporte', 'aportes') + ' · guardado a las ' + fecha;
+  }
+
+  /* =========================== SINCRONIZACIÓN CON GIST ===========================
+     El gist guarda UN archivo con el árbol cifrado (AES-GCM con tu contraseña).
+     Diseño a prueba de pérdidas:
+       · al abrir         → baja y FUSIONA (nunca reemplaza)
+       · al editar        → sube con retardo
+       · antes de subir   → si el gist cambió y no lo tienes, no sube: avisa
+     ============================================================================ */
+  var SYNC_AJUSTES = 'arbol-genealogico/sync';
+  var sync = {
+    token: '', gistId: '', archivo: 'arbol.json', clave: '',
+    auto: true, alDia: false, subidaPendiente: null, bajadaPendiente: null,
+    bajando: false, subiendo: false, ultimoError: '', ultimaSync: '', avisado: false
+  };
+
+  function cargarAjustesSync() {
+    var raw = null;
+    try { raw = localStorage.getItem(SYNC_AJUSTES); } catch (e) { }
+    if (!raw) return;
+    try {
+      var d = JSON.parse(raw);
+      sync.token = String(d.token || '');
+      sync.gistId = String(d.gistId || '');
+      sync.archivo = String(d.archivo || 'arbol.json');
+      sync.clave = String(d.clave || '');
+      sync.auto = d.auto !== false;
+    } catch (e) { }
+  }
+  function guardarAjustesSync() {
+    try {
+      localStorage.setItem(SYNC_AJUSTES, JSON.stringify({
+        token: sync.token, gistId: sync.gistId, archivo: sync.archivo,
+        clave: sync.clave, auto: sync.auto
+      }));
+    } catch (e) { console.warn('No se pudieron guardar los ajustes de sincronización', e); }
+  }
+  function syncActiva() { return !!(sync.token && sync.clave); }
+
+  function apiGist(metodo, ruta, cuerpo) {
+    var cabeceras = {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': 'Bearer ' + sync.token,
+      'X-GitHub-Api-Version': '2022-11-28'
+    };
+    if (cuerpo) cabeceras['Content-Type'] = 'application/json';
+    return fetch('https://api.github.com' + ruta, {
+      method: metodo, headers: cabeceras, body: cuerpo ? JSON.stringify(cuerpo) : undefined
+    }).then(function (r) {
+      return r.text().then(function (txt) {
+        var datos = null;
+        try { datos = JSON.parse(txt); } catch (e) { }
+        if (!r.ok) {
+          var motivo = (datos && datos.message) || ('HTTP ' + r.status);
+          if (r.status === 401) motivo = 'Token rechazado o caducado';
+          if (r.status === 403) motivo = 'Token sin permiso de gists';
+          if (r.status === 404) motivo = 'Gist no encontrado (¿es su ID?)';
+          var err = new Error(motivo);
+          err.status = r.status;
+          throw err;
+        }
+        return datos;
+      });
+    });
+  }
+
+  function contenidoLocal() {
+    return JSON.stringify({
+      formato: 'arbol-cifrado/1',
+      actualizado: new Date().toISOString(),
+      dispositivo: /iPhone|iPad|Android/i.test(navigator.userAgent || '') ? 'móvil' : 'ordenador',
+      datos: { meta: state.meta, personas: state.personas, aportes: state.aportes }
+    });
+  }
+
+  /* ---------- crear el gist (la primera vez) ---------- */
+  function crearGist(alTerminar, silencioso) {
+    var terminar = alTerminar || function (cifrado) { sincronizado(cifrado); };
+    return cifrarTexto(contenidoLocal(), sync.clave).then(function (cifrado) {
+      var cuerpo = {
+        description: 'Árbol genealógico cifrado — app arbol-cuestionado (solo texto cifrado)',
+        public: false,
+        files: {}
+      };
+      cuerpo.files[sync.archivo] = { content: cifrado };
+      return apiGist('POST', '/gists', cuerpo).then(function (gist) {
+        sync.gistId = gist.id;
+        guardarAjustesSync();
+        terminar(cifrado);
+        if (!silencioso) {
+          aviso('Gist creado y árbol subido. Copia este ID en tu otro dispositivo: ' + gist.id);
+          dictado('creacion');
+        }
+        return true;
+      });
+    }).catch(function (e) {
+      sync.subiendo = false;
+      sync.ultimoError = e.message;
+      pintarSync();
+      if (!silencioso) aviso('No se pudo crear el gist: ' + e.message);
+      return false;
+    });
+  }
+
+  function sincronizado(cifrado) {
+    sync.ultimoContenidoSubido = cifrado;
+    sync.ultimaSync = new Date().toISOString();
+    sync.alDia = true;
+    sync.ultimoError = '';
+    sync.subiendo = false;
+    guardarAjustesSync();
+    pintarSync();
+  }
+
+  /* ---------- subir ---------- */
+  function programarSubida() {
+    if (!syncActiva() || !sync.auto) return;
+    if (sync.subidaPendiente) clearTimeout(sync.subidaPendiente);
+    sync.subidaPendiente = setTimeout(function () {
+      sync.subidaPendiente = null;
+      subirAlGist(true);
+    }, 6000);
+  }
+
+  function subirAlGist(silencioso) {
+    if (!syncActiva()) { if (!silencioso) aviso('Configura primero el token y la contraseña en Datos → Sincronización.'); return Promise.resolve(false); }
+    if (sync.subiendo) return Promise.resolve(false);
+    sync.subiendo = true;
+    pintarSync();
+    if (!sync.gistId) {
+      // primer dispositivo: todavía no hay gist que actualizar
+      return crearGist(cifrado => { sync.subiendo = false; sincronizado(cifrado); }, silencioso);
+    }
+    return cifrarTexto(contenidoLocal(), sync.clave).then(function (cifrado) {
+      return apiGist('GET', '/gists/' + sync.gistId).then(function (gist) {
+        var contenidoRemoto = gist && gist.files && gist.files[sync.archivo] ? gist.files[sync.archivo].content : null;
+        if (contenidoRemoto && contenidoRemoto !== sync.ultimoContenidoSubido && !sync.alDia) {
+          // hay cambios remotos que no hemos visto: no pisamos
+          sync.subiendo = false;
+          pintarSync();
+          aviso('El gist tiene cambios que este dispositivo todavía no tiene. Para no perder nada, no se ha subido.', 'Bajar y fusionar', function () { bajarDelGist({ fusionar: true }); });
+          return false;
+        }
+        var nuevo = { files: {} };
+        nuevo.files[sync.archivo] = { content: cifrado };
+        return apiGist('PATCH', '/gists/' + sync.gistId, nuevo).then(function () {
+          sync.subiendo = false;
+          sincronizado(cifrado);
+          if (!silencioso) aviso('Árbol subido al gist.');
+          dictado('subida');
+          return true;
+        });
+      });
+    }).catch(function (e) {
+      sync.subiendo = false;
+      sync.ultimoError = e.message;
+      pintarSync();
+      aviso('No se pudo subir: ' + e.message);
+      return false;
+    });
+  }
+
+  /* ---------- bajar ---------- */
+  function bajarDelGist(opciones) {
+    opciones = opciones || {};
+    if (!syncActiva()) { if (!opciones.silencioso) aviso('Configura primero el token y la contraseña en Datos → Sincronización.'); return Promise.resolve(false); }
+    if (sync.bajando) return Promise.resolve(false);
+    sync.bajando = true;
+    pintarSync();
+    return apiGist('GET', '/gists/' + sync.gistId).then(function (gist) {
+      var archivo = gist && gist.files ? gist.files[sync.archivo] : null;
+      if (!archivo || !archivo.content) {
+        // gist vacío o recién creado: subimos lo que tenemos
+        sync.bajando = false;
+        if (opciones.silencioso) return subirAlGist(true);
+        aviso('El gist todavía no tiene datos. Se ha subido el árbol de este dispositivo.', 'Subir ahora', function () { subirAlGist(); });
+        return false;
+      }
+      var contenidoRemoto = archivo.content;
+      return descifrarTexto(contenidoRemoto, sync.clave).then(function (texto) {
+        var paquete = JSON.parse(texto);
+        var remoto = paquete && paquete.datos ? paquete.datos : paquete;
+        var nuevo = normalizeState(remoto);
+        var cambio = false;
+        if (nuevo.personas.length || nuevo.aportes.length) {
+          var res = fusionarEstado(nuevo);
+          cambio = res.personasNuevas > 0 || res.aportesNuevos > 0 || res.datosRellenados > 0;
+        }
+        sync.ultimoContenidoSubido = contenidoRemoto;
+        sync.ultimaSync = new Date().toISOString();
+        sync.alDia = true;
+        sync.ultimoError = '';
+        sync.bajando = false;
+        guardarLocal(true);
+        render(cambio);
+        pintarAportes();
+        pintarSync();
+        if (opciones.silencioso) {
+          if (cambio) aviso('Sincronizado: ' + descripcionCambios() + '.');
+        } else {
+          aviso(cambio ? 'Bajado y fusionado: ' + descripcionCambios() + '.' : 'Ya tenías todo lo del gist; no había nada nuevo.');
+        }
+        return cambio;
+      }).catch(function (e) {
+        sync.bajando = false;
+        sync.ultimoError = e.message || 'Error al descifrar';
+        pintarSync();
+        if (!opciones.silencioso || !sync.avisado) {
+          sync.avisado = true;
+          aviso('No se pudo leer el gist: ' + (e.message || 'error') + '. ¿La contraseña es la misma en los dos dispositivos?');
+        }
+        return false;
+      });
+    }).catch(function (e) {
+      sync.bajando = false;
+      sync.ultimoError = e.message;
+      pintarSync();
+      if (!opciones.silencioso) aviso('No se pudo bajar: ' + e.message);
+      return false;
+    });
+  }
+
+  var ultimoResumen = { personasNuevas: 0, aportesNuevos: 0, datosRellenados: 0 };
+  function descripcionCambios() {
+    var trozos = [];
+    if (ultimoResumen.personasNuevas) trozos.push(plural(ultimoResumen.personasNuevas, 'persona nueva', 'personas nuevas'));
+    if (ultimoResumen.aportesNuevos) trozos.push(plural(ultimoResumen.aportesNuevos, 'aporte nuevo', 'aportes nuevos'));
+    if (ultimoResumen.datosRellenados) trozos.push(plural(ultimoResumen.datosRellenados, 'dato completado', 'datos completados'));
+    return trozos.length ? trozos.join(', ') : 'sin novedades';
+  }
+
+  /* ---------- fusionar (sin duplicar, sin perder) ---------- */
+  function fusionarEstado(entrante) {
+    var res = { personasNuevas: 0, aportesNuevos: 0, datosRellenados: 0 };
+    entrante.personas.forEach(function (pe) {
+      var existente = state.personas.filter(function (x) {
+        return norm(x.nombre) === norm(pe.nombre) &&
+          (!yearOf(pe.nac) || !yearOf(x.nac) || yearOf(pe.nac) === yearOf(x.nac));
+      })[0];
+      if (!existente) {
+        state.personas.push(pe);
+        pe._destino = pe.id;
+        res.personasNuevas++;
+        return;
+      }
+      pe._destino = existente.id;
+      ['alias', 'sexo', 'nac', 'fall', 'lugar', 'foto', 'notas', 'padre', 'madre'].forEach(function (k) {
+        if (!existente[k] && pe[k]) { existente[k] = pe[k]; res.datosRellenados++; }
+      });
+      if (pe.certeza === 'alta' && existente.certeza !== 'alta') { existente.certeza = 'alta'; res.datosRellenados++; }
+      (pe.fuentes || []).forEach(function (f) {
+        var repetida = (existente.fuentes || []).some(function (g) { return (g.texto || '') === (f.texto || '') && (g.url || '') === (f.url || ''); });
+        if (!repetida) { existente.fuentes = (existente.fuentes || []).concat([f]); res.datosRellenados++; }
+      });
+    });
+    // reconstruir vínculos del lote entrante apuntando a los destinos locales
+    entrante.personas.forEach(function (pe) {
+      var destino = pe._destino ? byId(pe._destino) : null;
+      if (!destino) return;
+      ['padre', 'madre'].forEach(function (campo) {
+        if (destino[campo] || !pe[campo]) return;
+        var orig = entrante.personas.filter(function (x) { return x.id === pe[campo]; })[0];
+        if (!orig) return;
+        var objetivo = byId(orig._destino);
+        if (objetivo && objetivo.id !== destino.id && !esAncestro(state, destino.id, objetivo.id)) {
+          destino[campo] = objetivo.id;
+          res.datosRellenados++;
+        }
+      });
+      (pe.parejas || []).forEach(function (pid) {
+        var orig = entrante.personas.filter(function (x) { return x.id === pid; })[0];
+        if (!orig) return;
+        var objetivo = byId(orig._destino);
+        if (objetivo) vincularPareja(destino, objetivo);
+      });
+    });
+    entrante.aportes.forEach(function (a) {
+      if (!state.aportes.some(function (x) { return x.id === a.id; })) { state.aportes.push(a); res.aportesNuevos++; }
+    });
+    if (!state.meta.raizId && entrante.meta.raizId) state.meta.raizId = entrante.meta.raizId;
+    state.personas.forEach(function (p) { delete p._destino; });
+    state = normalizeState(state);
+    ultimoResumen = res;
+    return res;
+  }
+
+  /* ---------- estado en pantalla ---------- */
+  // Registro local de actividad (útil al depurar; no sale del dispositivo)
+  function dictado(tipo) {
+    try {
+      var reg = JSON.parse(localStorage.getItem('arbol-genealogico/registro') || '[]');
+      reg.unshift({ tipo: tipo, cuando: new Date().toISOString() });
+      localStorage.setItem('arbol-genealogico/registro', JSON.stringify(reg.slice(0, 50)));
+    } catch (e) { }
+  }
+  function cuando(fecha) {    if (!fecha) return 'nunca';
+    var seg = Math.round((Date.now() - new Date(fecha).getTime()) / 1000);
+    if (seg < 60) return 'hace ' + seg + ' s';
+    if (seg < 3600) return 'hace ' + Math.round(seg / 60) + ' min';
+    return new Date(fecha).toLocaleTimeString();
+  }
+  function pintarSync() {
+    var caja = $('#syncEstado');
+    if (!caja) return;
+    var clase = 'sync-estado', texto;
+    if (!sync.token && !sync.clave) { texto = 'Sin configurar: el árbol solo vive en este dispositivo.'; }
+    else if (!sync.token) { texto = 'Falta el token de GitHub.'; clase += ' aviso'; }
+    else if (!sync.clave) { texto = 'Falta la contraseña de cifrado.'; clase += ' aviso'; }
+    else if (sync.subiendo) { texto = 'Subiendo…'; clase += ' trabajando'; }
+    else if (sync.bajando) { texto = 'Bajando…'; clase += ' trabajando'; }
+    else if (sync.ultimoError) { texto = 'Error: ' + sync.ultimoError; clase += ' error'; }
+    else { texto = 'Sincronizado ' + cuando(sync.ultimaSync) + (sync.auto ? ' · automático' : ' · manual'); clase += ' ok'; }
+    caja.className = clase;
+    caja.textContent = texto;
+    var t = $('#syncGistId');
+    if (t && document.activeElement !== t) t.value = sync.gistId;
+    var c = $('#syncClave');
+    if (c && document.activeElement !== c) c.value = sync.clave ? '••••••••' : '';
+    var tok = $('#syncToken');
+    if (tok && document.activeElement !== tok) tok.value = sync.token ? sync.token.slice(0, 11) + '…' + sync.token.slice(-4) : '';
+    var auto = $('#syncAuto');
+    if (auto) auto.checked = sync.auto;
+    var enlace = $('#syncEnlace');
+    if (enlace) {
+      if (sync.gistId) { enlace.href = 'https://gist.github.com/' + sync.gistId; enlace.textContent = 'Ver el gist en GitHub'; enlace.hidden = false; }
+      else enlace.hidden = true;
+    }
+  }
+
+  function probarSync() {
+    var token = ($('#syncToken').value || '').trim();
+    var clave = ($('#syncClave').value || '').trim();
+    if (token && !/^•/.test(token)) sync.token = token;
+    if (clave && !/^•/.test(clave)) sync.clave = clave;
+    if (!sync.token) { aviso('Pega un token con permiso de gists.'); return; }
+    if (!sync.clave) { aviso('Escribe la contraseña de cifrado (la misma en todos tus dispositivos).'); return; }
+    sync.ultimoError = '';
+    pintarSync();
+    var guardado = guardarAjustesSync();
+    apiGist('GET', '/gists?per_page=1').then(function () {
+      aviso('Token válido: la app puede leer y escribir gists.', 'Crear gist y subir', function () {
+        crearGistYSubir();
+      });
+      guardado;
+    }).catch(function (e) {
+      sync.ultimoError = e.message;
+      pintarSync();
+      aviso('El token no funciona: ' + e.message);
+    });
+  }
+
+  function crearGistYSubir() {
+    if (sync.gistId) { subirAlGist(); return; }
+    crearGist(null, false);
+  }
+
+  function olvidarToken() {
+    if (!confirm('¿Borrar el token de este dispositivo? El árbol seguirá aquí y en el gist; para sincronizar tendrás que volver a pegarlo.')) return;
+    sync.token = '';
+    guardarAjustesSync();
+    pintarSync();
+    aviso('Token borrado de este dispositivo.');
+  }
+
+  function arrancarSync() {
+    cargarAjustesSync();
+    pintarSync();
+    if (!syncActiva() || !sync.auto) return;
+    // dejamos que la página termine de pintar antes de salir a la red
+    setTimeout(function () { bajarDelGist({ fusionar: true, silencioso: true }); }, 400);
   }
 
   /* --------------------------- layout --------------------------- */
@@ -1550,6 +1925,28 @@
     });
     $('#btnDemo').addEventListener('click', cargarDemo);
     $('#btnDemoDatos').addEventListener('click', cargarDemo);
+    $('#btnSyncProbar').addEventListener('click', probarSync);
+    $('#btnSyncSubir').addEventListener('click', function () { subirAlGist(); });
+    $('#btnSyncBajar').addEventListener('click', function () { bajarDelGist({ silencioso: false }); });
+    $('#btnSyncOlvidar').addEventListener('click', olvidarToken);
+    $('#syncAuto').addEventListener('change', function () {
+      sync.auto = $('#syncAuto').checked;
+      guardarAjustesSync();
+      pintarSync();
+      if (sync.auto && syncActiva()) bajarDelGist({ silencioso: true });
+    });
+    ['#syncToken', '#syncClave', '#syncGistId'].forEach(function (sel) {
+      var el = $(sel);
+      if (!el) return;
+      el.addEventListener('change', function () {
+        var v = (el.value || '').trim();
+        if (sel === '#syncToken' && v && v.charAt(0) !== '•') sync.token = v;
+        if (sel === '#syncClave' && v && v.charAt(0) !== '•') sync.clave = v;
+        if (sel === '#syncGistId') sync.gistId = v;
+        guardarAjustesSync();
+        pintarSync();
+      });
+    });
     $('#btnNueva').addEventListener('click', function () {
       var p = nuevaPersona({ nombre: 'El cuestionado', certeza: 'alta' });
       state.meta.raizId = p.id;
@@ -1626,6 +2023,7 @@
       }).catch(function () { });
     }
     leerHash();
+    arrancarSync();
     // al girar el móvil o cambiar el tamaño no se pierde el zoom ni el encuadre
     window.addEventListener('resize', function () { if (lay) aplicarVista(); });
     if (window.matchMedia) {
@@ -1658,7 +2056,14 @@
       abrirPanel: abrirPanel,
       cerrarPanel: cerrarPanel,
       ajustarTodo: ajustarTodo,
-      vista: function () { return { zoom: view.zoom, x: view.x, y: view.y }; }
+      vista: function () { return { zoom: view.zoom, x: view.x, y: view.y }; },
+      sync: sync,
+      guardarAjustesSync: guardarAjustesSync,
+      fusionarEstado: fusionarEstado,
+      subirAlGist: subirAlGist,
+      bajarDelGist: bajarDelGist,
+      pintarSync: pintarSync,
+      ultimoResumen: function () { return ultimoResumen; }
     };
   }
 

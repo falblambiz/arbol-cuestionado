@@ -273,6 +273,34 @@
         <button id="btnCopiarCfg" class="ghost small">Copiar ajustes para config.js</button>
       </div>
 
+      <h3>Sincronización entre tus dispositivos</h3>
+      <div id="syncEstado" class="sync-estado">Sin configurar: el árbol solo vive en este dispositivo.</div>
+      <p class="hint">Guarda tu árbol <strong>cifrado</strong> en un gist secreto de tu GitHub, para verlo igual desde el iPhone y el Mac.
+        En GitHub solo queda texto cifrado: la contraseña nunca sale de tus dispositivos.</p>
+
+      <div class="grid2">
+        <label class="col2">Token de GitHub (permiso <em>gists</em>)
+          <input id="syncToken" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="col2">Contraseña de cifrado (la misma en todos tus dispositivos)
+          <input id="syncClave" type="password" placeholder="una contraseña larga" autocomplete="off" />
+        </label>
+        <label class="col2">ID del gist (se rellena solo al crear o pegar el del otro dispositivo)
+          <input id="syncGistId" type="text" placeholder="p. ej. 8f3c1a9b2d…" autocomplete="off" spellcheck="false" />
+        </label>
+      </div>
+      <label class="check"><input id="syncAuto" type="checkbox" checked /> Sincronizar automáticamente (baja al abrir, sube al editar)</label>
+
+      <div class="actions wrap">
+        <button id="btnSyncProbar" class="primary small">Comprobar y crear gist</button>
+        <button id="btnSyncSubir" class="ghost small">Subir ahora</button>
+        <button id="btnSyncBajar" class="ghost small">Bajar ahora</button>
+        <button id="btnSyncOlvidar" class="danger ghost small">Borrar token</button>
+      </div>
+      <p class="muted small">Las subidas automáticas esperan 6 s tras tu último cambio. Si el gist tiene cambios que este dispositivo
+        no ha bajado, la app <strong>no sube</strong> y te avisa: así un dispositivo antiguo nunca pisa al otro.
+        <a id="syncEnlace" href="#" target="_blank" rel="noopener" hidden>Ver el gist en GitHub</a></p>
+
       <h3>Datos locales</h3>
       <p class="hint">Todo se guarda en <strong>este navegador</strong> (localStorage): nada se envía a ningún servidor.
         En modo privado <strong>no</strong> subas tu JSON al repositorio: guárdalo solo en tu Mac (o en tu nube personal) como copia de seguridad.</p>

@@ -204,12 +204,21 @@ COMPROBACIONES = r"""
 
 
 def main():
-    carpeta = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
+    carpeta = os.path.dirname(os.path.abspath(__file__))
+    url = None
+    for arg in sys.argv[1:]:
+        if arg.startswith("http"):
+            url = arg
+        else:
+            carpeta = arg
     if not os.path.exists(CHROME):
         print("Chrome no está instalado; no se puede verificar en navegador real.")
         return 0
 
-    httpd = servir(carpeta)
+    httpd = None
+    if url is None:
+        httpd = servir(carpeta)
+        url = f"http://127.0.0.1:{PUERTO_APP}/index.html"
     perfil = tempfile.mkdtemp(prefix="arbol-cdp-")
     chrome = subprocess.Popen(
         [CHROME, "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
@@ -235,7 +244,7 @@ def main():
         ws = ws_conectar("127.0.0.1", PUERTO_CDP, ruta_ws)
         cdp(ws, "Page.enable")
         cdp(ws, "Runtime.enable")
-        cdp(ws, "Page.navigate", {"url": f"http://127.0.0.1:{PUERTO_APP}/index.html"})
+        cdp(ws, "Page.navigate", {"url": url})
         time.sleep(2.5)
         resultado = cdp(ws, "Runtime.evaluate", {
             "expression": COMPROBACIONES, "awaitPromise": True, "returnByValue": True, "timeout": 60000
@@ -252,7 +261,8 @@ def main():
             chrome.wait(timeout=5)
         except Exception:
             chrome.kill()
-        httpd.shutdown()
+        if httpd:
+            httpd.shutdown()
 
 
 if __name__ == "__main__":

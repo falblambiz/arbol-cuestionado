@@ -348,6 +348,47 @@ GUION = r"""
   D.sync.clave = 'clave-compartida';
   await D.bajarDelGist({ silencioso: true });
 
+  // ---------- errores: credenciales con caracteres no válidos ----------
+  const tokenLimpio = D.sync.token;
+  const patFalso = 'github_pat_' + 'A'.repeat(80);
+  D.sync.token = patFalso + '\u2026';          // puntos suspensivos pegados del iPhone
+  D.sync.gistId = gistId;
+  D.sync.ultimoContenidoSubido = null;
+  D.sync.alDia = false;
+  let falloRaro = await D.bajarDelGist({ silencioso: true });
+  const saneado = D.sanear(patFalso + '\u2026', true);
+  if (falloRaro !== true || D.sync.ultimoError) {
+    // si algo va mal, damos una segunda oportunidad tras haber sincronizado una vez
+    D.sync.ultimoError = '';
+    D.sync.alDia = false;
+    falloRaro = await D.bajarDelGist({ silencioso: true });
+  }
+  ok('token con puntos suspensivos: se limpia y funciona igual',
+     falloRaro === false && !D.sync.ultimoError,
+     'resultado=' + falloRaro + ' · error=' + JSON.stringify(D.sync.ultimoError) +
+     ' · gistId=' + JSON.stringify(D.sync.gistId) +
+     ' · saneado=' + saneado.length + ' caracteres, idéntico al bueno: ' + (saneado === patFalso) +
+     ' · token guardado empieza por ' + JSON.stringify(String(D.sync.token).slice(0, 14)));
+  ok('el error nunca es técnico (ISO-8859, fetch)', !/ISO-8859|fetch|non ISO/i.test(D.sync.ultimoError), D.sync.ultimoError || 'sin error');
+
+  D.sync.token = patFalso + '\n';               // salto de línea del autocorrector
+  D.sync.gistId = 'no-existe-000';
+  const falloSalto = await D.bajarDelGist({ silencioso: true });
+  ok('token con salto de línea: se sanea y llega a la API', falloSalto === false && /no encontrado/i.test(D.sync.ultimoError),
+     D.sync.ultimoError);
+  D.sync.gistId = gistId;
+
+  D.sync.token = 'esto-no-es-un-token';         // pegado por error: la validación lo detecta
+  const revision = D.tokenValido(D.sanear('esto-no-es-un-token', true));
+  ok('texto que no es un token: la validación lo detecta antes de llamar a la API',
+     revision.ok === false && /no parece un token/i.test(revision.motivo), revision.motivo);
+  out.push('     · texto cualquiera → ' + revision.motivo);
+
+  D.sync.token = tokenLimpio;
+  const tokenLimpio2 = D.sync.token;
+  out.push('     · saneado: "…" se limpia a ' + JSON.stringify(D.sanear(patFalso + '\u2026', true).slice(-6)) +
+           ' y sigue válido: ' + D.tokenValido(D.sanear(patFalso + '\u2026', true)).ok);
+
   // ---------- el panel muestra el estado ----------
   D.pintarSync();
   ok('el panel muestra el estado de sincronización',

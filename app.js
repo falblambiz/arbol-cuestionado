@@ -311,10 +311,39 @@
   }
   function syncActiva() { return !!(sync.token && sync.clave); }
 
+  // Limpia lo que se pega: espacios, saltos de línea y caracteres "bonitos"
+  // (comillas tipográficas, puntos suspensivos…) que rompen las cabeceras HTTP.
+  function sanearCredencial(valor, quitarEspacios) {
+    var v = String(valor == null ? '' : valor);
+    v = v.replace(/[\u2018\u2019\u201A\u201B\u2032\u2035]/g, "'")
+         .replace(/[\u201C\u201D\u201E\u201F\u2033\u2036]/g, '"');
+    // los caracteres de adorno (puntos suspensivos, guiones largos…) se ELIMINAN,
+    // no se sustituyen: sustituirlos cambiaría el valor del token o la contraseña.
+    v = v.replace(/[\u2026\u2013\u2014\u2212\u200B-\u200D\uFEFF]/g, '');
+    v = v.replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '');
+    if (quitarEspacios) v = v.replace(/\s+/g, '');
+    return v.trim();
+  }
+  function tokenValido(t) {
+    if (!t) return { ok: false, motivo: 'vacío' };
+    if (!/^(gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})$/.test(t)) {
+      if (t.indexOf('ghp_') === 0 || t.indexOf('github_pat_') === 0) {
+        return { ok: false, motivo: 'parece un token pero le faltan o le sobran caracteres (¿se copió entero?)' };
+      }
+      return { ok: false, motivo: 'no parece un token de GitHub (suele empezar por github_pat_ o ghp_)' };
+    }
+    if (!/[A-Za-z0-9]/.test(t)) return { ok: false, motivo: 'no contiene caracteres válidos' };
+    return { ok: true, motivo: '' };
+  }
+
   function apiGist(metodo, ruta, cuerpo) {
+    var token = sanearCredencial(sync.token, true);
+    if (!/^[\x20-\x7E]+$/.test(token)) {
+      return Promise.reject(new Error('El token contiene caracteres no válidos; vuelve a pegarlo'));
+    }
     var cabeceras = {
       'Accept': 'application/vnd.github+json',
-      'Authorization': 'Bearer ' + sync.token,
+      'Authorization': 'Bearer ' + token,
       'X-GitHub-Api-Version': '2022-11-28'
     };
     if (cuerpo) cabeceras['Content-Type'] = 'application/json';
@@ -602,20 +631,36 @@
   }
 
   function probarSync() {
-    var token = ($('#syncToken').value || '').trim();
-    var clave = ($('#syncClave').value || '').trim();
+    var token = sanearCredencial($('#syncToken').value, true);
+    var clave = sanearCredencial($('#syncClave').value, false);
     if (token && !/^•/.test(token)) sync.token = token;
     if (clave && !/^•/.test(clave)) sync.clave = clave;
-    if (!sync.token) { aviso('Pega un token con permiso de gists.'); return; }
+
+    var revision = tokenValido(sync.token);
+    if (!revision.ok) {
+      aviso('Token: ' + revision.motivo + '. Cópialo otra vez desde GitHub (empieza por github_pat_) sin espacios ni saltos de línea.');
+      return;
+    }
+    if (sync.token !== sanearCredencial(sync.token, true)) {
+      aviso('El token traía espacios o caracteres raros; los he quitado. Vuelve a pulsar el botón.');
+      sync.token = sanearCredencial(sync.token, true);
+      guardarAjustesSync();
+      pintarSync();
+      return;
+    }
     if (!sync.clave) { aviso('Escribe la contraseña de cifrado (la misma en todos tus dispositivos).'); return; }
+    if (!/^[\x20-\x7E]+$/.test(sync.clave)) {
+      aviso('La contraseña tiene caracteres que no son válidos para el cifrado. Usa letras, números y signos normales (evita emojis y comillas tipográficas).');
+      return;
+    }
+
     sync.ultimoError = '';
     pintarSync();
-    var guardado = guardarAjustesSync();
+    guardarAjustesSync();
     apiGist('GET', '/gists?per_page=1').then(function () {
       aviso('Token válido: la app puede leer y escribir gists.', 'Crear gist y subir', function () {
         crearGistYSubir();
       });
-      guardado;
     }).catch(function (e) {
       sync.ultimoError = e.message;
       pintarSync();
@@ -1939,10 +1984,10 @@
       var el = $(sel);
       if (!el) return;
       el.addEventListener('change', function () {
-        var v = (el.value || '').trim();
+        var v = sanearCredencial(el.value, sel === '#syncToken');
         if (sel === '#syncToken' && v && v.charAt(0) !== '•') sync.token = v;
         if (sel === '#syncClave' && v && v.charAt(0) !== '•') sync.clave = v;
-        if (sel === '#syncGistId') sync.gistId = v;
+        if (sel === '#syncGistId') sync.gistId = sanearCredencial(el.value, true);
         guardarAjustesSync();
         pintarSync();
       });
@@ -2060,6 +2105,8 @@
       sync: sync,
       guardarAjustesSync: guardarAjustesSync,
       fusionarEstado: fusionarEstado,
+      sanear: sanearCredencial,
+      tokenValido: tokenValido,
       subirAlGist: subirAlGist,
       bajarDelGist: bajarDelGist,
       pintarSync: pintarSync,

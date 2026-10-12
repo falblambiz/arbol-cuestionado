@@ -280,15 +280,17 @@
 
       <div class="grid2">
         <label class="col2">Token de GitHub (permiso <em>gists</em>)
-          <input id="syncToken" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false" />
+          <input id="syncToken" type="password" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
         </label>
         <label class="col2">Contraseña de cifrado (la misma en todos tus dispositivos)
-          <input id="syncClave" type="password" placeholder="una contraseña larga" autocomplete="off" />
+          <input id="syncClave" type="password" placeholder="letras, números y signos" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" />
         </label>
         <label class="col2">ID del gist (se rellena solo al crear o pegar el del otro dispositivo)
-          <input id="syncGistId" type="text" placeholder="p. ej. 8f3c1a9b2d…" autocomplete="off" spellcheck="false" />
+          <input id="syncGistId" type="text" placeholder="p. ej. 8f3c1a9b2d…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
         </label>
       </div>
+      <p class="muted small">El token y la contraseña solo llevan letras, números y signos normales. Si pegas desde el iPhone, evita que el autocorrector
+        meta comillas «bonitas» o puntos suspensivos (…): la app los limpia, pero es más limpio copiarlos sin adorno.</p>
       <label class="check"><input id="syncAuto" type="checkbox" checked /> Sincronizar automáticamente (baja al abrir, sube al editar)</label>
 
       <div class="actions wrap">
